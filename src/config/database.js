@@ -1,4 +1,4 @@
-import { Client, Databases, Query, ID } from "appwrite";
+import { Client, Databases, Query, ID, Permission, Role } from "appwrite";
 
 const client = new Client()
   .setEndpoint(import.meta.env.VITE_APPWRITE_ENDPOINT)
@@ -6,8 +6,23 @@ const client = new Client()
 
 export const databases = new Databases(client);
 
+// Collection IDs from environment (ensure these are the actual Appwrite collection IDs, not friendly names)
+const LEARNING_PATH_COLLECTION = import.meta.env.VITE_COLLECTION_ID;
+const USER_PROGRESS_COLLECTION = import.meta.env.VITE_USER_PROGRESS_COLLECTION_ID || "user_progress";
+
+// Basic runtime validation to help debugging misconfigured env values
+if (!import.meta.env.VITE_APPWRITE_DATABASE_ID || !import.meta.env.VITE_APPWRITE_PROJECT_ID) {
+  console.warn("Appwrite config warning: VITE_APPWRITE_DATABASE_ID or VITE_APPWRITE_PROJECT_ID may be missing in your .env");
+}
+if (!LEARNING_PATH_COLLECTION) {
+  console.warn("Appwrite config warning: VITE_COLLECTION_ID (learning paths collection) is not set. Make sure to set it to the collection ID, not the collection name.");
+}
+
 export const createLearningPath = async (userId, topicName, modules) => {
   try {
+    // Create the document and set per-user read/write permissions so the
+    // authenticated user becomes the owner. Use the SDK helpers to form
+    // valid Permission/Role objects instead of raw strings.
     return await databases.createDocument(
       import.meta.env.VITE_APPWRITE_DATABASE_ID,
       import.meta.env.VITE_COLLECTION_ID,
@@ -18,11 +33,19 @@ export const createLearningPath = async (userId, topicName, modules) => {
         modules: JSON.stringify(modules), // Convert array to string
         progress: 0,
         completedModules: JSON.stringify([]), // Initialize as empty array
-      }
+      },
+      [Permission.read(Role.user(userId)), Permission.write(Role.user(userId))]
     );
   } catch (error) {
+    // Log detailed Appwrite error payload when available to help debugging in browser
     console.error("Database Error:", error);
-    throw new Error("Failed to create learning path in database");
+    try {
+      console.error("Appwrite error details:", JSON.stringify({ message: error.message, code: error.code, response: error.response || error.responseJSON || null }));
+    } catch (e) {
+      // ignore
+    }
+    // Rethrow the original error so the caller can see Appwrite's detailed message
+    throw error;
   }
 };
 
@@ -30,7 +53,7 @@ export const getLearningPaths = async (userId) => {
   try {
     const response = await databases.listDocuments(
       import.meta.env.VITE_APPWRITE_DATABASE_ID,
-      import.meta.env.VITE_COLLECTION_ID,
+      LEARNING_PATH_COLLECTION,
       [Query.equal("userID", userId)]
     );
 
@@ -82,7 +105,7 @@ export const updateUserProgress = async (userId, data) => {
   try {
     const response = await databases.listDocuments(
       import.meta.env.VITE_APPWRITE_DATABASE_ID,
-      "user_progress",
+      USER_PROGRESS_COLLECTION,
       [Query.equal("userID", userId)]
     );
 
@@ -90,7 +113,7 @@ export const updateUserProgress = async (userId, data) => {
       const doc = response.documents[0];
       return await databases.updateDocument(
         import.meta.env.VITE_APPWRITE_DATABASE_ID,
-        "user_progress",
+        USER_PROGRESS_COLLECTION,
         doc.$id,
         {
           userID: userId,
@@ -106,23 +129,25 @@ export const updateUserProgress = async (userId, data) => {
             : doc.flashcardCount,
         }
       );
-    } else {
-      return await databases.createDocument(
-        import.meta.env.VITE_APPWRITE_DATABASE_ID,
-        "user_progress",
-        ID.unique(),
-        {
-          userID: userId,
-          topicName: data.topicName || "",
-          quizScores: data.quizScores
-            ? JSON.stringify([data.quizScores])
-            : "[]",
-          flashcardCount: data.flashcardCount || 0,
-        }
-      );
     }
+
+    // No existing doc — create one with document-level permissions
+    return await databases.createDocument(
+      import.meta.env.VITE_APPWRITE_DATABASE_ID,
+      USER_PROGRESS_COLLECTION,
+      ID.unique(),
+      {
+        userID: userId,
+        topicName: data.topicName || "",
+        quizScores: data.quizScores ? JSON.stringify([data.quizScores]) : "[]",
+        flashcardCount: data.flashcardCount || 0,
+      }
+    );
   } catch (error) {
     console.error("Progress update error:", error);
+    try {
+      console.error("Appwrite error details:", JSON.stringify({ message: error.message, code: error.code, response: error.response || error.responseJSON || null }));
+    } catch (e) {}
     throw error;
   }
 };
@@ -131,7 +156,7 @@ export const getFlashcardCount = async (userId) => {
   try {
     const response = await databases.listDocuments(
       import.meta.env.VITE_APPWRITE_DATABASE_ID,
-      "user_progress",
+      USER_PROGRESS_COLLECTION,
       [Query.equal("userID", userId)]
     );
 
@@ -150,7 +175,7 @@ export const getUserProgress = async (userId) => {
   try {
     const response = await databases.listDocuments(
       import.meta.env.VITE_APPWRITE_DATABASE_ID,
-      "user_progress",
+      USER_PROGRESS_COLLECTION,
       [Query.equal("userID", userId)]
     );
 
