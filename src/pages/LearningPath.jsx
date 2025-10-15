@@ -44,19 +44,27 @@ const LearningPath = () => {
     setLoading(true);
     try {
       const user = await account.get();
+      console.debug("LearningPath: authenticated user:", user);
+      if (!user || !user.$id) {
+        setError("User not authenticated. Please login before creating a learning path.");
+        setLoading(false);
+        return;
+      }
       const modules = await generateLearningPath(topicName);
 
       if (!Array.isArray(modules) || modules.length === 0) {
         throw new Error("Invalid response from AI");
       }
 
+      console.debug("LearningPath: creating path for userId", user.$id, { topicName, modules });
       await createLearningPath(user.$id, topicName, modules);
       setShowModal(false);
       fetchPaths();
       // Show success message
     } catch (error) {
       console.error("Error creating path:", error);
-      setError(error.message || "Failed to create learning path");
+      // Surface detailed error during debugging — includes Appwrite error object
+      setError(error.message || (error && error.response ? JSON.stringify(error.response) : JSON.stringify(error)) || "Failed to create learning path");
     } finally {
       setLoading(false);
     }
