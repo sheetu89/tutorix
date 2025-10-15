@@ -77,6 +77,8 @@ const ModuleDetails = () => {
       }
       setError("");
 
+      console.log('[ModuleDetails] Loading content for pathId:', pathId, 'moduleIndex:', moduleIndex);
+
       const response = await databases.getDocument(
         import.meta.env.VITE_APPWRITE_DATABASE_ID,
         import.meta.env.VITE_COLLECTION_ID,
@@ -85,15 +87,18 @@ const ModuleDetails = () => {
 
       const modules = JSON.parse(response.modules);
       const moduleTitle = modules[parseInt(moduleIndex)];
+      console.log('[ModuleDetails] Module title:', moduleTitle);
+      
       const isTechTopic = isCodeRelatedTopic(moduleTitle);
 
       if (expanded) {
+        console.log('[ModuleDetails] Generating detailed content...');
         const detailedContent = await generateModuleContent(moduleTitle, {
           detailed: true,
           includeExamples: true,
         });
 
-        console.log("Generated content:", detailedContent); // For debugging
+        console.log("[ModuleDetails] Generated content:", detailedContent); // For debugging
 
         setContent((prevContent) => ({
           ...prevContent,
@@ -110,17 +115,19 @@ const ModuleDetails = () => {
           hasMoreContent: false,
         }));
       } else {
+        console.log('[ModuleDetails] Generating initial content...');
         const initialContent = await generateModuleContent(moduleTitle, {
           detailed: false,
         });
+        console.log('[ModuleDetails] Initial content received:', initialContent?.title, 'sections:', initialContent?.sections?.length);
         setContent({
           ...initialContent,
           hasMoreContent: true,
         });
       }
     } catch (error) {
-      console.error("Content loading error:", error);
-      setError("Failed to load content. Please try again.");
+      console.error("[ModuleDetails] Content loading error:", error);
+      setError(`Failed to load content: ${error.message || 'Unknown error'}. Please try again.`);
     } finally {
       setLoading(false);
       setIsLoadingMore(false);
